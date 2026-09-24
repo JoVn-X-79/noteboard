@@ -3,13 +3,10 @@
 \usepackage[margin=2.5cm]{geometry}
 \usepackage{hyperref}
 \usepackage{booktabs}
-\usepackage{graphicx}
 \usepackage{parskip}
 \usepackage{titlesec}
 \usepackage{microtype}
 \usepackage{enumitem}
-\usepackage{xcolor}
-\usepackage{listings}
 
 \hypersetup{
     colorlinks=true,
@@ -84,31 +81,37 @@ The system is made up of three components: a \textbf{frontend} service (nginx), 
 \begin{figure}[h]
 \centering
 \begin{verbatim}
-+----------------+
-|  Web Browser   |
-+-------+--------+
-        | HTTP (NodePort 30080)
-        v
-+-------+--------+          +-------------------+
-| frontend-svc   |          |  noteboard-config  |
-| (NodePort)     |          |  (ConfigMap)       |
-+-------+--------+          +-------------------+
-        |                          |
-   +---------+               +---------+
-   | nginx   |               | Flask   | <-- env vars
-   | pod 1   |--/api/------->| pod 1   |
-   | pod 2   |  proxy_pass   | pod 2   |
-   +---------+               +----+----+
-                                  | SQL (port 5432)
-                             +----v----+
-                             | postgres|
-                             | pod     |
-                             +----+----+
-                                  |
-                             +----v----+
-                             | db-pvc  |
-                             | (1 Gi)  |
-                             +---------+
+  +------------------+
+  |   Web Browser    |
+  +--------+---------+
+           | HTTP (NodePort 30080)
+           v
+  +--------+---------+
+  | frontend-service |
+  |   (NodePort)     |
+  +--------+---------+
+           |
+  +--------+---------+
+  | nginx pods (x2)  |---/api/ proxy_pass--+
+  +------------------+                     |
+                                           v
+  +--------------------+       +---------------------+
+  | noteboard-config   |------>| Flask pods (x2)     |
+  | (ConfigMap)        |       | backend-service     |
+  | DB_HOST, DB_NAME   |       | (ClusterIP :5000)   |
+  +--------------------+       +----------+----------+
+                                          |
+  +--------------------+                  | SQL :5432
+  | noteboard-secret   |------>           v
+  | (Secret)           |       +----------+----------+
+  | DB_USER, DB_PASS   |       | postgres pod (x1)   |
+  +--------------------+       | db-service          |
+                               | (ClusterIP :5432)   |
+                               +----------+----------+
+                                          |
+                               +----------+----------+
+                               | db-pvc (1 Gi PVC)   |
+                               +---------------------+
 \end{verbatim}
 \caption{System architecture: browser $\to$ frontend $\to$ backend $\to$ database}
 \end{figure}
