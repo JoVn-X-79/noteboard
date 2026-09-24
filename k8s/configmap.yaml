@@ -1,0 +1,12 @@
+# ConfigMap: non-sensitive configuration shared across backend pods
+# Contains DB hostname and database name (not credentials — those are in the Secret)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: noteboard-config
+  labels:
+    app: noteboard
+data:
+  # Kubernetes internal DNS name for the PostgreSQL service
+  DB_HOST: "db-service"
+  DB_NAME: "noteboard"

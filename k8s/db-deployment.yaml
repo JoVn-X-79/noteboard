@@ -1,0 +1,86 @@
+# PostgreSQL Deployment — single replica (database does not need horizontal scaling)
+# Data is persisted via the db-pvc PersistentVolumeClaim
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: db
+  labels:
+    app: noteboard
+    tier: database
+spec:
+  replicas: 1   # intentionally 1 — single-primary PostgreSQL
+  selector:
+    matchLabels:
+      app: noteboard
+      tier: database
+  template:
+    metadata:
+      labels:
+        app: noteboard
+        tier: database
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:15-alpine
+          ports:
+            - containerPort: 5432
+          env:
+            # These env vars are recognised by the official postgres image
+            - name: POSTGRES_DB
+              valueFrom:
+                configMapKeyRef:
+                  name: noteboard-config
+                  key: DB_NAME
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: noteboard-secret
+                  key: DB_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: noteboard-secret
+                  key: POSTGRES_PASSWORD
+          volumeMounts:
+            - name: db-data
+              mountPath: /var/lib/postgresql/data
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "nbuser", "-d", "noteboard"]
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "nbuser", "-d", "noteboard"]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 3
+      volumes:
+        - name: db-data
+          persistentVolumeClaim:
+            claimName: db-pvc
+---
+# ClusterIP Service — only accessible inside the cluster (backend talks to it via db-service:5432)
+apiVersion: v1
+kind: Service
+metadata:
+  name: db-service
+  labels:
+    app: noteboard
+    tier: database
+spec:
+  type: ClusterIP
+  selector:
+    app: noteboard
+    tier: database
+  ports:
+    - port: 5432
+      targetPort: 5432

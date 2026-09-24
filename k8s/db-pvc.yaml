@@ -1,0 +1,14 @@
+# PersistentVolumeClaim for PostgreSQL data
+# Ensures database data survives pod restarts and rescheduling
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: db-pvc
+  labels:
+    app: noteboard
+spec:
+  accessModes:
+    - ReadWriteOnce   # single node read/write — appropriate for a single DB replica
+  resources:
+    requests:
+      storage: 1Gi

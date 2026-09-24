@@ -1,0 +1,86 @@
+# Backend Deployment — Flask REST API
+# Stateless: all state lives in PostgreSQL, so replicas: 2 scales cleanly
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  labels:
+    app: noteboard
+    tier: backend
+spec:
+  replicas: 2   # independently scalable — stateless, no shared in-process state
+  selector:
+    matchLabels:
+      app: noteboard
+      tier: backend
+  template:
+    metadata:
+      labels:
+        app: noteboard
+        tier: backend
+    spec:
+      containers:
+        - name: backend
+          image: jovnx79/noteboard-backend:v1
+          ports:
+            - containerPort: 5000
+          env:
+            - name: DB_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: noteboard-config
+                  key: DB_HOST
+            - name: DB_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: noteboard-config
+                  key: DB_NAME
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: noteboard-secret
+                  key: DB_USER
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: noteboard-secret
+                  key: DB_PASSWORD
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "300m"
+              memory: "256Mi"
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 5000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 5000
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            failureThreshold: 3
+---
+# ClusterIP Service — only reachable inside the cluster
+# nginx frontend proxies /api/ to backend-service:5000 via Kubernetes DNS
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-service
+  labels:
+    app: noteboard
+    tier: backend
+spec:
+  type: ClusterIP
+  selector:
+    app: noteboard
+    tier: backend
+  ports:
+    - port: 5000
+      targetPort: 5000

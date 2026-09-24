@@ -1,0 +1,67 @@
+# Frontend Deployment — nginx serving static HTML and proxying /api/ to backend-service
+# Stateless: replicas: 2 scales without issue
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  labels:
+    app: noteboard
+    tier: frontend
+spec:
+  replicas: 2   # independently scalable — nginx is fully stateless
+  selector:
+    matchLabels:
+      app: noteboard
+      tier: frontend
+  template:
+    metadata:
+      labels:
+        app: noteboard
+        tier: frontend
+    spec:
+      containers:
+        - name: frontend
+          image: jovnx79/noteboard-frontend:v1
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: "25m"
+              memory: "32Mi"
+            limits:
+              cpu: "100m"
+              memory: "64Mi"
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+---
+# NodePort Service — exposes the frontend to the outside world
+# Access via: minikube service frontend-service --url
+# NodePort 30080 is fixed so the URL is predictable
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-service
+  labels:
+    app: noteboard
+    tier: frontend
+spec:
+  type: NodePort
+  selector:
+    app: noteboard
+    tier: frontend
+  ports:
+    - port: 80
+      targetPort: 80
+      nodePort: 30080
