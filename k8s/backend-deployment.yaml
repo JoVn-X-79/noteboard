@@ -21,7 +21,7 @@ spec:
     spec:
       containers:
         - name: backend
-          image: jovnx79/noteboard-backend:v1
+          image: jovnx79/noteboard-backend:v2
           ports:
             - containerPort: 5000
           env:

@@ -5,158 +5,499 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Noteboard</title>
   <style>
+    :root {
+      --yellow: #fff9c4; --yellow-b: #f9a825;
+      --green:  #c8e6c9; --green-b:  #388e3c;
+      --blue:   #bbdefb; --blue-b:   #1565c0;
+      --pink:   #f8bbd0; --pink-b:   #c2185b;
+      --purple: #e1bee7; --purple-b: #7b1fa2;
+      --orange: #ffe0b2; --orange-b: #e65100;
+    }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      font-family: system-ui, sans-serif;
-      background: #f0f4f8;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: 2rem 1rem;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #1a1a2e;
       min-height: 100vh;
+      color: #1a1a1a;
     }
-    h1 { font-size: 2rem; margin-bottom: 1.5rem; color: #1a202c; }
-    #composer {
+
+    /* ── Header ── */
+    header {
+      background: #16213e;
+      padding: 1rem 2rem;
       display: flex;
-      gap: 0.5rem;
-      width: 100%;
-      max-width: 600px;
-      margin-bottom: 1.5rem;
+      align-items: center;
+      gap: 1rem;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.4);
+      position: sticky; top: 0; z-index: 100;
+    }
+    header h1 {
+      font-size: 1.5rem;
+      color: #e2e8f0;
+      white-space: nowrap;
+    }
+    header h1 span { color: #f6c90e; }
+    #searchBar {
+      flex: 1;
+      max-width: 400px;
+      padding: 0.5rem 1rem;
+      border-radius: 20px;
+      border: none;
+      background: #0f3460;
+      color: #e2e8f0;
+      font-size: 0.95rem;
+      outline: none;
+      transition: background 0.2s;
+    }
+    #searchBar::placeholder { color: #718096; }
+    #searchBar:focus { background: #1a4a80; }
+    #noteCount {
+      color: #718096;
+      font-size: 0.85rem;
+      white-space: nowrap;
+    }
+
+    /* ── Composer ── */
+    #composerWrap {
+      max-width: 520px;
+      margin: 2rem auto 1.5rem;
+      padding: 0 1rem;
+    }
+    #composer {
+      background: #16213e;
+      border-radius: 12px;
+      padding: 1rem;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.3);
     }
     #noteInput {
-      flex: 1;
-      padding: 0.6rem 0.8rem;
-      border: 1px solid #cbd5e0;
-      border-radius: 6px;
-      font-size: 1rem;
-    }
-    button {
-      padding: 0.6rem 1.2rem;
-      background: #3182ce;
-      color: white;
-      border: none;
-      border-radius: 6px;
-      cursor: pointer;
-      font-size: 1rem;
-    }
-    button:hover { background: #2b6cb0; }
-    #notes {
       width: 100%;
-      max-width: 600px;
+      background: transparent;
+      border: none;
+      color: #e2e8f0;
+      font-size: 1rem;
+      resize: none;
+      outline: none;
+      min-height: 60px;
+      font-family: inherit;
+    }
+    #noteInput::placeholder { color: #4a5568; }
+    #composerFooter {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 0.75rem;
+    }
+    .color-picker { display: flex; gap: 6px; }
+    .color-dot {
+      width: 20px; height: 20px;
+      border-radius: 50%;
+      cursor: pointer;
+      border: 2px solid transparent;
+      transition: transform 0.15s, border-color 0.15s;
+    }
+    .color-dot:hover { transform: scale(1.2); }
+    .color-dot.selected { border-color: #fff; transform: scale(1.2); }
+    .color-dot[data-c="yellow"]{ background: var(--yellow-b); }
+    .color-dot[data-c="green"] { background: var(--green-b);  }
+    .color-dot[data-c="blue"]  { background: var(--blue-b);   }
+    .color-dot[data-c="pink"]  { background: var(--pink-b);   }
+    .color-dot[data-c="purple"]{ background: var(--purple-b); }
+    .color-dot[data-c="orange"]{ background: var(--orange-b); }
+    #charCount { color: #4a5568; font-size: 0.8rem; }
+    #charCount.warn { color: #fc8181; }
+    #saveBtn {
+      background: #f6c90e;
+      color: #1a1a2e;
+      border: none;
+      border-radius: 8px;
+      padding: 0.45rem 1.2rem;
+      font-weight: 700;
+      cursor: pointer;
+      font-size: 0.95rem;
+      transition: background 0.15s, transform 0.1s;
+    }
+    #saveBtn:hover { background: #e5b800; transform: scale(1.03); }
+    #saveBtn:active { transform: scale(0.98); }
+
+    /* ── Sections ── */
+    #board { padding: 0 1.5rem 3rem; max-width: 1200px; margin: 0 auto; }
+    .section-label {
+      color: #718096;
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      margin: 1.5rem 0 0.75rem;
+    }
+
+    /* ── Notes grid ── */
+    .notes-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 1rem;
+    }
+
+    /* ── Note card ── */
+    .note-card {
+      border-radius: 10px;
+      padding: 1rem;
+      position: relative;
       display: flex;
       flex-direction: column;
-      gap: 0.75rem;
+      gap: 0.5rem;
+      transition: transform 0.15s, box-shadow 0.15s;
+      animation: popIn 0.2s ease;
+      min-height: 120px;
     }
-    .note {
-      background: white;
-      border-radius: 8px;
-      padding: 0.9rem 1rem;
+    @keyframes popIn {
+      from { opacity: 0; transform: scale(0.92); }
+      to   { opacity: 1; transform: scale(1); }
+    }
+    .note-card:hover { transform: translateY(-3px); box-shadow: 0 8px 24px rgba(0,0,0,0.25); }
+    .note-card[data-color="yellow"] { background: var(--yellow); border-top: 3px solid var(--yellow-b); }
+    .note-card[data-color="green"]  { background: var(--green);  border-top: 3px solid var(--green-b);  }
+    .note-card[data-color="blue"]   { background: var(--blue);   border-top: 3px solid var(--blue-b);   }
+    .note-card[data-color="pink"]   { background: var(--pink);   border-top: 3px solid var(--pink-b);   }
+    .note-card[data-color="purple"] { background: var(--purple); border-top: 3px solid var(--purple-b); }
+    .note-card[data-color="orange"] { background: var(--orange); border-top: 3px solid var(--orange-b); }
+
+    .note-text {
+      flex: 1;
+      font-size: 0.95rem;
+      line-height: 1.5;
+      word-break: break-word;
+      white-space: pre-wrap;
+    }
+    .note-text[contenteditable="true"] {
+      outline: 1px dashed rgba(0,0,0,0.3);
+      border-radius: 4px;
+      padding: 2px 4px;
+      min-height: 2em;
+    }
+
+    .note-meta { font-size: 0.72rem; color: rgba(0,0,0,0.45); }
+
+    .note-actions {
       display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      gap: 4px;
+      opacity: 0;
+      transition: opacity 0.15s;
     }
-    .note-text { flex: 1; word-break: break-word; color: #2d3748; }
-    .note-meta { font-size: 0.75rem; color: #a0aec0; margin-top: 0.3rem; }
-    .del-btn {
-      background: none;
-      color: #e53e3e;
-      font-size: 1.2rem;
-      padding: 0 0.4rem;
-      margin-left: 0.5rem;
+    .note-card:hover .note-actions { opacity: 1; }
+    .action-btn {
+      background: rgba(0,0,0,0.08);
+      border: none;
+      border-radius: 6px;
+      padding: 4px 7px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      transition: background 0.15s;
       line-height: 1;
     }
-    .del-btn:hover { background: none; color: #c53030; }
-    #status { color: #e53e3e; margin-bottom: 0.5rem; font-size: 0.9rem; }
+    .action-btn:hover { background: rgba(0,0,0,0.18); }
+    .action-btn.pin-btn.pinned { background: rgba(0,0,0,0.18); }
+
+    /* Edit mode save/cancel */
+    .edit-controls { display: none; gap: 4px; margin-top: 4px; }
+    .note-card.editing .edit-controls { display: flex; }
+    .note-card.editing .note-actions { opacity: 1; }
+    .edit-save { background:#388e3c; color:#fff; border:none; border-radius:5px; padding:3px 10px; cursor:pointer; font-size:0.8rem; }
+    .edit-cancel{ background:#e53e3e; color:#fff; border:none; border-radius:5px; padding:3px 8px; cursor:pointer; font-size:0.8rem; }
+
+    /* Color picker on card */
+    .card-color-picker {
+      display: none;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-top: 4px;
+    }
+    .note-card.editing .card-color-picker { display: flex; }
+    .card-color-dot {
+      width: 16px; height: 16px;
+      border-radius: 50%;
+      cursor: pointer;
+      border: 2px solid transparent;
+      transition: transform 0.1s;
+    }
+    .card-color-dot:hover, .card-color-dot.selected { border-color: rgba(0,0,0,0.5); transform: scale(1.2); }
+    .card-color-dot[data-c="yellow"]{ background: var(--yellow-b); }
+    .card-color-dot[data-c="green"] { background: var(--green-b);  }
+    .card-color-dot[data-c="blue"]  { background: var(--blue-b);   }
+    .card-color-dot[data-c="pink"]  { background: var(--pink-b);   }
+    .card-color-dot[data-c="purple"]{ background: var(--purple-b); }
+    .card-color-dot[data-c="orange"]{ background: var(--orange-b); }
+
+    /* ── Empty / error states ── */
+    .empty-state {
+      text-align: center;
+      color: #4a5568;
+      padding: 3rem 1rem;
+    }
+    .empty-state .icon { font-size: 3rem; margin-bottom: 0.5rem; }
+    #toast {
+      position: fixed; bottom: 1.5rem; left: 50%; transform: translateX(-50%);
+      background: #e53e3e; color: #fff;
+      padding: 0.6rem 1.4rem; border-radius: 8px;
+      font-size: 0.9rem; opacity: 0;
+      transition: opacity 0.3s;
+      pointer-events: none;
+      z-index: 200;
+    }
+    #toast.show { opacity: 1; }
   </style>
 </head>
 <body>
-  <h1>📝 Noteboard</h1>
+
+<header>
+  <h1>📝 Note<span>board</span></h1>
+  <input id="searchBar" type="search" placeholder="Search notes…" oninput="onSearch(this.value)" />
+  <span id="noteCount"></span>
+</header>
+
+<div id="composerWrap">
   <div id="composer">
-    <input id="noteInput" type="text" placeholder="Type a note and press Save…" maxlength="500" />
-    <button onclick="saveNote()">Save</button>
+    <textarea id="noteInput" placeholder="Write a note… (Enter to save, Shift+Enter for new line)"
+              rows="3" maxlength="500" oninput="onTyping()"></textarea>
+    <div id="composerFooter">
+      <div class="color-picker" id="colorPicker"></div>
+      <span id="charCount">500</span>
+      <button id="saveBtn" onclick="saveNote()">Save</button>
+    </div>
   </div>
-  <p id="status"></p>
-  <div id="notes"></div>
+</div>
 
-  <script>
-    const API = '/api/notes';
+<div id="board"></div>
+<div id="toast"></div>
 
-    async function loadNotes() {
-      try {
-        const res = await fetch(API);
-        if (!res.ok) throw new Error('Failed to load');
-        const notes = await res.json();
-        renderNotes(notes);
-      } catch (e) {
-        setStatus('Could not load notes: ' + e.message);
-      }
-    }
+<script>
+const API = '/api/notes';
+const COLORS = ['yellow','green','blue','pink','purple','orange'];
+let selectedColor = 'yellow';
+let allNotes = [];
+let searchQ = '';
 
-    function renderNotes(notes) {
-      const container = document.getElementById('notes');
-      if (notes.length === 0) {
-        container.innerHTML = '<p style="color:#a0aec0">No notes yet. Add one above!</p>';
-        return;
-      }
-      container.innerHTML = notes.map(n => `
-        <div class="note" id="note-${n.id}">
-          <div>
-            <div class="note-text">${escHtml(n.text)}</div>
-            <div class="note-meta">${new Date(n.created_at).toLocaleString()}</div>
-          </div>
-          <button class="del-btn" onclick="deleteNote(${n.id})" title="Delete">✕</button>
-        </div>
-      `).join('');
-    }
+// ── Boot ──────────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  buildColorPicker();
+  document.getElementById('noteInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveNote(); }
+  });
+  loadNotes();
+});
 
-    async function saveNote() {
-      const input = document.getElementById('noteInput');
-      const text = input.value.trim();
-      if (!text) { setStatus('Note cannot be empty.'); return; }
-      setStatus('');
-      try {
-        const res = await fetch(API, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text }),
-        });
-        if (!res.ok) throw new Error('Save failed');
-        input.value = '';
-        await loadNotes();
-      } catch (e) {
-        setStatus('Could not save note: ' + e.message);
-      }
-    }
+// ── Color picker (composer) ───────────────────────────────────────────────────
+function buildColorPicker() {
+  const cp = document.getElementById('colorPicker');
+  COLORS.forEach(c => {
+    const d = document.createElement('span');
+    d.className = 'color-dot' + (c === selectedColor ? ' selected' : '');
+    d.dataset.c = c;
+    d.title = c;
+    d.onclick = () => {
+      selectedColor = c;
+      cp.querySelectorAll('.color-dot').forEach(x => x.classList.remove('selected'));
+      d.classList.add('selected');
+    };
+    cp.appendChild(d);
+  });
+}
 
-    async function deleteNote(id) {
-      try {
-        const res = await fetch(`${API}/${id}`, { method: 'DELETE' });
-        if (!res.ok && res.status !== 404) throw new Error('Delete failed');
-        document.getElementById(`note-${id}`)?.remove();
-        // Reload to ensure consistent state
-        await loadNotes();
-      } catch (e) {
-        setStatus('Could not delete note: ' + e.message);
-      }
-    }
+// ── Load & render ─────────────────────────────────────────────────────────────
+async function loadNotes(q = '') {
+  try {
+    const url = q ? `${API}?q=${encodeURIComponent(q)}` : API;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('load failed');
+    allNotes = await res.json();
+    render(allNotes, q);
+  } catch(e) { showToast('Could not load notes: ' + e.message); }
+}
 
-    function setStatus(msg) {
-      document.getElementById('status').textContent = msg;
-    }
+function render(notes, q = '') {
+  const board = document.getElementById('board');
+  const countEl = document.getElementById('noteCount');
+  countEl.textContent = notes.length + ' note' + (notes.length !== 1 ? 's' : '');
 
-    function escHtml(str) {
-      return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-                .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
-    }
+  if (!notes.length) {
+    board.innerHTML = `<div class="empty-state"><div class="icon">${q ? '🔍' : '🗒️'}</div>
+      <p>${q ? 'No notes match "' + escHtml(q) + '"' : 'No notes yet — add one above!'}</p></div>`;
+    return;
+  }
 
-    // Allow Enter key to save
-    document.addEventListener('DOMContentLoaded', () => {
-      document.getElementById('noteInput').addEventListener('keydown', e => {
-        if (e.key === 'Enter') saveNote();
-      });
-      loadNotes();
+  const pinned = notes.filter(n => n.pinned);
+  const unpinned = notes.filter(n => !n.pinned);
+
+  let html = '';
+  if (pinned.length) {
+    html += `<p class="section-label">📌 Pinned</p><div class="notes-grid">`;
+    html += pinned.map(noteCard).join('');
+    html += `</div>`;
+  }
+  if (unpinned.length) {
+    if (pinned.length) html += `<p class="section-label">Others</p>`;
+    html += `<div class="notes-grid">`;
+    html += unpinned.map(noteCard).join('');
+    html += `</div>`;
+  }
+  board.innerHTML = html;
+}
+
+function noteCard(n) {
+  const age = relTime(n.updated_at || n.created_at);
+  const edited = n.updated_at !== n.created_at ? ' · edited' : '';
+  return `
+  <div class="note-card" id="card-${n.id}" data-color="${escHtml(n.color || 'yellow')}">
+    <div class="note-actions">
+      <button class="action-btn pin-btn ${n.pinned ? 'pinned' : ''}"
+              onclick="togglePin(${n.id})" title="${n.pinned ? 'Unpin' : 'Pin'}">
+        ${n.pinned ? '📌' : '📍'}
+      </button>
+      <button class="action-btn" onclick="startEdit(${n.id})" title="Edit">✏️</button>
+      <button class="action-btn" onclick="deleteNote(${n.id})" title="Delete">🗑️</button>
+    </div>
+    <div class="note-text" id="text-${n.id}">${escHtml(n.text)}</div>
+    <div class="card-color-picker" id="ccp-${n.id}">
+      ${COLORS.map(c => `<span class="card-color-dot ${c === n.color ? 'selected':''}"
+        data-c="${c}" title="${c}" onclick="setEditColor(${n.id},'${c}')"></span>`).join('')}
+    </div>
+    <div class="edit-controls" id="ec-${n.id}">
+      <button class="edit-save" onclick="saveEdit(${n.id})">Save</button>
+      <button class="edit-cancel" onclick="cancelEdit(${n.id})">Cancel</button>
+    </div>
+    <div class="note-meta">${age}${edited}</div>
+  </div>`;
+}
+
+// ── Composer ─────────────────────────────────────────────────────────────────
+function onTyping() {
+  const inp = document.getElementById('noteInput');
+  const rem = 500 - inp.value.length;
+  const cc = document.getElementById('charCount');
+  cc.textContent = rem;
+  cc.className = rem < 50 ? 'warn' : '';
+}
+
+async function saveNote() {
+  const inp = document.getElementById('noteInput');
+  const text = inp.value.trim();
+  if (!text) { showToast('Note cannot be empty.'); return; }
+  try {
+    const res = await fetch(API, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ text, color: selectedColor }),
     });
-  </script>
+    if (!res.ok) throw new Error('save failed');
+    inp.value = '';
+    document.getElementById('charCount').textContent = '500';
+    await loadNotes(searchQ);
+  } catch(e) { showToast('Could not save: ' + e.message); }
+}
+
+// ── Edit ─────────────────────────────────────────────────────────────────────
+function startEdit(id) {
+  const card = document.getElementById('card-' + id);
+  const textEl = document.getElementById('text-' + id);
+  if (card.classList.contains('editing')) return;
+  card.classList.add('editing');
+  textEl.setAttribute('contenteditable', 'true');
+  textEl.focus();
+  // Move cursor to end
+  const range = document.createRange();
+  range.selectNodeContents(textEl);
+  range.collapse(false);
+  window.getSelection().removeAllRanges();
+  window.getSelection().addRange(range);
+}
+
+function setEditColor(id, color) {
+  const card = document.getElementById('card-' + id);
+  card.dataset.color = color;
+  card.querySelectorAll('.card-color-dot').forEach(d => {
+    d.classList.toggle('selected', d.dataset.c === color);
+  });
+}
+
+async function saveEdit(id) {
+  const card = document.getElementById('card-' + id);
+  const textEl = document.getElementById('text-' + id);
+  const text = textEl.textContent.trim();
+  const color = card.dataset.color;
+  if (!text) { showToast('Note text cannot be empty.'); return; }
+  try {
+    const res = await fetch(`${API}/${id}`, {
+      method: 'PUT',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ text, color }),
+    });
+    if (!res.ok) throw new Error('update failed');
+    await loadNotes(searchQ);
+  } catch(e) { showToast('Could not update: ' + e.message); }
+}
+
+function cancelEdit(id) {
+  loadNotes(searchQ); // just re-render from server state
+}
+
+// ── Pin ───────────────────────────────────────────────────────────────────────
+async function togglePin(id) {
+  try {
+    const res = await fetch(`${API}/${id}/pin`, { method: 'PATCH' });
+    if (!res.ok) throw new Error('pin failed');
+    await loadNotes(searchQ);
+  } catch(e) { showToast('Could not pin: ' + e.message); }
+}
+
+// ── Delete ────────────────────────────────────────────────────────────────────
+async function deleteNote(id) {
+  const card = document.getElementById('card-' + id);
+  if (card) card.style.opacity = '0.4';
+  try {
+    const res = await fetch(`${API}/${id}`, { method: 'DELETE' });
+    if (!res.ok && res.status !== 404) throw new Error('delete failed');
+    await loadNotes(searchQ);
+  } catch(e) {
+    if (card) card.style.opacity = '1';
+    showToast('Could not delete: ' + e.message);
+  }
+}
+
+// ── Search ────────────────────────────────────────────────────────────────────
+let searchTimer;
+function onSearch(val) {
+  searchQ = val.trim();
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => loadNotes(searchQ), 250);
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function relTime(iso) {
+  const diff = Date.now() - new Date(iso).getTime();
+  const s = Math.floor(diff / 1000);
+  if (s < 60)  return 'just now';
+  const m = Math.floor(s / 60);
+  if (m < 60)  return m + ' min ago';
+  const h = Math.floor(m / 60);
+  if (h < 24)  return h + 'h ago';
+  const d = Math.floor(h / 24);
+  if (d < 7)   return d + 'd ago';
+  return new Date(iso).toLocaleDateString();
+}
+
+function escHtml(s) {
+  return String(s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+let toastTimer;
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 3500);
+}
+</script>
 </body>
 </html>

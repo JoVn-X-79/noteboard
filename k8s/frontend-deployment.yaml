@@ -21,7 +21,7 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: jovnx79/noteboard-frontend:v1
+          image: jovnx79/noteboard-frontend:v2
           ports:
             - containerPort: 80
           resources:
