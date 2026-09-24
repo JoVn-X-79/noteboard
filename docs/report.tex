@@ -1,0 +1,290 @@
+\documentclass[12pt,a4paper]{article}
+
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{parskip}
+\usepackage{titlesec}
+\usepackage{microtype}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{listings}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,
+    urlcolor=blue,
+    citecolor=black
+}
+
+\titleformat{\section}{\large\bfseries}{}{0em}{}[\titlerule]
+\titleformat{\subsection}{\normalsize\bfseries}{}{0em}{}
+
+\setlist[itemize]{noitemsep, topsep=4pt}
+
+\title{\textbf{Noteboard: A Microservice Application\\on Kubernetes}\\[0.5em]
+\large Cloud Engineering Assignment Report}
+\author{}
+\date{}
+
+\begin{document}
+
+\maketitle
+\thispagestyle{empty}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Application Description}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\subsection{What the Application Does}
+
+Noteboard is a simple shared notepad that runs in the browser. You open the page, type something, and press Save. The note appears on the same page immediately. You can pin important notes so they stay at the top, edit the text or colour of any note in place, search through your notes using the search bar, and delete ones you no longer need. Everything is stored in a database, so closing the browser or restarting a container does not lose any data.
+
+The idea is not to be impressive as a product. The point was to build something that is just complex enough to demonstrate how microservices, containers, and Kubernetes work together in a real deployment.
+
+\subsection{Who Would Use It}
+
+The most realistic use case is a small team that wants a shared scratchpad without setting up anything on their machines. Because there is no login and no installation required on the client side, it is the kind of tool a team might spin up internally for quick notes during a sprint, or a student group might use to share reminders. That said, the current version has no authentication at all, which means it is not appropriate for anything sensitive or public-facing — everyone who can reach the URL can read and delete all notes.
+
+\subsection{Features}
+
+\begin{itemize}
+    \item Add a note with up to 500 characters; press Enter or click Save
+    \item Choose from six background colours (yellow, green, blue, pink, purple, orange) when creating a note
+    \item Pin notes so they appear at the top of the list in a separate ``Pinned'' section
+    \item Edit the text and colour of any note directly on the card
+    \item Live search: results filter as you type, querying the backend with a short debounce
+    \item Relative timestamps (``just now'', ``5 min ago'', ``3d ago'') that update on each render
+    \item REST API exposed by the backend for all operations
+\end{itemize}
+
+\subsection{Honesty About Scale}
+
+This application is small and that is intentional. A real production notepad with thousands of users would not actually need to be split into microservices --- a single process with a database would be simpler and cheaper to run. The microservice split here is purely for learning purposes.
+
+If Noteboard were to grow into a real service, the following things would need to change before the architecture would make sense at scale:
+
+\begin{itemize}
+    \item \textbf{Authentication} --- right now all notes are public. A real system needs user accounts and private note spaces.
+    \item \textbf{Database high availability} --- the current setup uses one PostgreSQL pod. If it goes down, the app is broken until Kubernetes reschedules it (roughly 10--15 seconds in testing). A production deployment would need streaming replication or a managed database service like AWS RDS or Google Cloud SQL.
+    \item \textbf{Connection pooling} --- the backend opens a new database connection on every single HTTP request. Under any real load this would exhaust PostgreSQL's connection limit quickly. PgBouncer or a connection pool in the application would fix this.
+    \item \textbf{HTTPS and Ingress} --- the current setup exposes the app over plain HTTP on a NodePort. Production would need a proper Ingress controller with a TLS certificate.
+    \item \textbf{CDN for static assets} --- the HTML, CSS, and JavaScript files are served directly from nginx pods. A CDN would be faster and relieve load from the cluster.
+\end{itemize}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Software Architecture Design}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\subsection{System Overview}
+
+The system is made up of three components: a \textbf{frontend} service (nginx), a \textbf{backend} service (Flask), and a \textbf{database} (PostgreSQL). All three run as separate pods inside a Kubernetes cluster. The frontend is the only one that is reachable from outside the cluster; the backend and database are internal only.
+
+\begin{figure}[h]
+\centering
+\begin{verbatim}
++----------------+
+|  Web Browser   |
++-------+--------+
+        | HTTP (NodePort 30080)
+        v
++-------+--------+          +-------------------+
+| frontend-svc   |          |  noteboard-config  |
+| (NodePort)     |          |  (ConfigMap)       |
++-------+--------+          +-------------------+
+        |                          |
+   +---------+               +---------+
+   | nginx   |               | Flask   | <-- env vars
+   | pod 1   |--/api/------->| pod 1   |
+   | pod 2   |  proxy_pass   | pod 2   |
+   +---------+               +----+----+
+                                  | SQL (port 5432)
+                             +----v----+
+                             | postgres|
+                             | pod     |
+                             +----+----+
+                                  |
+                             +----v----+
+                             | db-pvc  |
+                             | (1 Gi)  |
+                             +---------+
+\end{verbatim}
+\caption{System architecture: browser $\to$ frontend $\to$ backend $\to$ database}
+\end{figure}
+
+\subsection{Component Roles}
+
+\textbf{Frontend (nginx:alpine).}
+The frontend serves a single HTML page to the browser and also works as a reverse proxy. When the JavaScript in the browser makes a request to \texttt{/api/notes}, nginx forwards it to \texttt{http://backend-service:5000} using its \texttt{proxy\_pass} directive. The browser never sees the backend's address --- it always talks to the same origin. This avoids any cross-origin (CORS) issues entirely. The frontend has two replicas running by default, and because it holds no state it can be scaled freely.
+
+\textbf{Backend (Python 3.11 + Flask + psycopg2).}
+The backend is a small REST API. It starts up, creates the \texttt{notes} database table if it does not already exist, and then listens for requests. It reads its database host and name from a ConfigMap injected as environment variables, and its username and password from a Kubernetes Secret. Because all state lives in PostgreSQL, any backend pod can handle any request --- there is nothing stored in memory that ties a user to a specific pod. This statelessness is what makes horizontal scaling work correctly.
+
+The available endpoints are:
+\begin{itemize}
+    \item \texttt{GET /api/health} --- used by Kubernetes probes to check if the pod is alive
+    \item \texttt{GET /api/notes?q=} --- list all notes; optionally filter by search term
+    \item \texttt{POST /api/notes} --- create a note with text and colour
+    \item \texttt{PUT /api/notes/<id>} --- edit the text or colour of an existing note
+    \item \texttt{PATCH /api/notes/<id>/pin} --- toggle the pinned state of a note
+    \item \texttt{DELETE /api/notes/<id>} --- delete a note permanently
+\end{itemize}
+
+\textbf{Database (PostgreSQL 15 alpine).}
+A single PostgreSQL instance stores one table with columns for id, text, colour, pinned status, created time, and last updated time. The pod mounts a PersistentVolumeClaim so its data directory (\texttt{/var/lib/postgresql/data}) survives being deleted and rescheduled. The database runs with one replica deliberately --- it does not need to scale for this workload.
+
+\textbf{ConfigMap (\texttt{noteboard-config}).}
+Stores non-sensitive settings: the database hostname (\texttt{db-service}) and database name (\texttt{noteboard}). Using a ConfigMap means the same Docker image can be pointed at a different database without rebuilding it.
+
+\textbf{Secret (\texttt{noteboard-secret}).}
+Stores base64-encoded credentials: \texttt{DB\_USER}, \texttt{DB\_PASSWORD}, and \texttt{POSTGRES\_PASSWORD}. These are injected as environment variables into the backend and database pods respectively.
+
+\subsection{Inter-Service Communication}
+
+All communication inside the cluster uses Kubernetes internal DNS. When the backend pod wants to connect to PostgreSQL, it uses the hostname \texttt{db-service}, which Kubernetes resolves to the ClusterIP of the database Service. No IP addresses are hardcoded anywhere.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}llll@{}}
+\toprule
+\textbf{From} & \textbf{To} & \textbf{Protocol} & \textbf{Address} \\
+\midrule
+Browser         & frontend-service & HTTP     & NodePort 30080 \\
+nginx pod       & backend-service  & HTTP     & \texttt{backend-service:5000} \\
+Flask pod       & db-service       & PostgreSQL TCP & \texttt{db-service:5432} \\
+\bottomrule
+\end{tabular}
+\caption{Communication paths between components}
+\end{table}
+
+\subsection{Cloud Architecture Patterns}
+
+\textbf{API Gateway / Reverse Proxy.}
+The nginx frontend acts as a gateway. The browser makes all requests to a single address and nginx decides what to do with them --- serve a static file or forward the request to the backend. This pattern keeps the backend invisible to the outside world and is standard in production web applications.
+
+\textbf{Database-per-Service.}
+PostgreSQL is owned entirely by the backend service. No other component queries the database directly. This is a core microservices principle: if every service shares one database, they become tightly coupled at the data layer, which defeats the purpose of splitting them up in the first place.
+
+\textbf{Stateless Compute.}
+Both the frontend and backend pods are completely stateless. They do not write to disk, they do not store sessions in memory, and they do not cache anything that would be specific to one pod. This is the property that makes it safe to add more replicas. Kubernetes can put any request on any pod and the result is the same.
+
+\textbf{Health Endpoint Pattern.}
+The backend exposes \texttt{GET /api/health} specifically so Kubernetes can check whether the pod is ready to receive traffic (readiness probe) and whether it is still functioning correctly (liveness probe). Without these probes, Kubernetes would send traffic to a pod that is still starting up, or leave a crashed pod in the rotation.
+
+\textbf{Infrastructure as Code.}
+Every single resource in this system --- the deployments, services, persistent volume claim, ConfigMap, and Secret --- is defined in YAML files checked into the Git repository. There are no manual steps. Running \texttt{kubectl apply -f k8s/} from a clean cluster creates everything. This means the deployment is repeatable, reviewable, and version-controlled just like the application code.
+
+\textbf{Horizontal Scaling Pattern.}
+The frontend and backend are in separate Kubernetes Deployments. This means they can be scaled independently of each other. If search traffic increases, you scale up the backend without touching the frontend. If more users are loading the page, you scale the frontend. The command \texttt{kubectl scale deployment backend --replicas=5} is all it takes.
+
+\subsection{Component Mapping Table}
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{@{}llll@{}}
+\toprule
+\textbf{Component} & \textbf{Service Name} & \textbf{Docker Image} & \textbf{K8s Resources} \\
+\midrule
+nginx + static HTML & frontend & \texttt{jovnx79/noteboard-frontend:v2} & Deployment, NodePort Service \\
+Flask REST API      & backend  & \texttt{jovnx79/noteboard-backend:v2}  & Deployment, ClusterIP Service \\
+PostgreSQL 15       & db       & \texttt{postgres:15-alpine}            & Deployment, ClusterIP Service, PVC \\
+Non-secret config   & ---      & ---                                   & ConfigMap \\
+DB credentials      & ---      & ---                                   & Secret \\
+\bottomrule
+\end{tabular}
+\caption{Mapping from software component to Kubernetes resource}
+\end{table}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Discussion: Benefits, Challenges, and Security}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\subsection{Benefits of the Architecture}
+
+The most obvious benefit is that the three tiers are genuinely independent. You can redeploy the backend without touching the frontend. You can upgrade PostgreSQL without rebuilding either application image. Changes to one tier do not require re-testing the others, as long as the API contract stays the same.
+
+The separation also makes the system easier to reason about. When something goes wrong, the problem is isolated. If the database pod crashes, the frontend can still serve the page; the error is visible when the browser tries to load notes, not in an unrelated part of the application. Logs from the backend pods will clearly show database connection errors without noise from the frontend.
+
+Because configuration is injected from ConfigMaps and Secrets rather than baked into the images, the same Docker images can be deployed to a staging environment pointing at a different database, just by changing the ConfigMap. No rebuilding required.
+
+The Infrastructure as Code approach means the entire system can be torn down and recreated in under a minute from a clean cluster. During development this was useful: \texttt{kubectl delete --cascade=foreground -f k8s/} followed by \texttt{kubectl apply -f k8s/} gives a clean state. This kind of repeatability is difficult to achieve with manually configured environments.
+
+\subsection{Challenges and Trade-offs}
+
+The most significant technical issue found during development is the \textbf{connection-per-request} pattern in the Flask backend. Every call to the database opens a fresh TCP connection to PostgreSQL and closes it when the request finishes. This works correctly but is wasteful. Under any real traffic, PostgreSQL's connection limit (100 by default) would be hit quickly. The correct fix is to use a connection pool --- either SQLAlchemy's built-in pool or an external one like PgBouncer running as a sidecar container. This was not implemented because it would add complexity that the assignment does not require, but it would be the first thing to fix before putting this under load.
+
+The \textbf{single PostgreSQL replica} is a deliberate simplification. In testing, when the database pod was forcibly deleted, there was an outage of roughly 10 to 15 seconds while Kubernetes rescheduled it and PostgreSQL finished its startup sequence. For a real application this would be unacceptable. The standard Kubernetes-native solution is the CloudNativePG operator, which manages a primary-replica PostgreSQL cluster with automatic failover inside the cluster.
+
+Using a \textbf{NodePort service} for external access is fine for Minikube but not for production. NodePorts are not designed for production traffic --- they have no TLS termination, no hostname-based routing, and expose a port on every node. The correct approach is to deploy an Ingress controller and route traffic through it, with a certificate managed by cert-manager.
+
+\subsection{Security}
+
+\textbf{Threat 1: Unauthenticated API.}
+There is no authentication on the backend. Any client that can reach the frontend can read, add, or delete all notes. Mitigation implemented: none, by design for simplicity. What should be added: at minimum, an API key checked in an nginx header, or JWT tokens for a multi-user system.
+
+\textbf{Threat 2: Kubernetes Secrets are only base64-encoded.}
+Kubernetes Secrets are not encrypted by default. Anyone with \texttt{kubectl get secret} access to the namespace can decode and read the database password in seconds. Mitigation implemented: secrets are at least in a Secret object rather than a ConfigMap or hardcoded in the image. What should be added: \texttt{EncryptionConfiguration} to encrypt etcd at rest, or an external secrets manager such as HashiCorp Vault or the AWS Secrets Manager with the External Secrets Operator.
+
+\textbf{Threat 3: Environment variables leaking credentials.}
+Credentials injected as environment variables are visible to any process running inside the container and can appear in crash dumps or debug output. Mitigation implemented: the backend code does not log environment variables. What should be added: mount Secrets as files instead of env vars, and read them once at startup.
+
+\textbf{Threat 4: Containers running as root.}
+Both Flask and nginx run as the root user inside their containers by default. If an attacker escapes the container, they have root on the host. Mitigation implemented: minimal base images (\texttt{python:3.11-slim}, \texttt{nginx:alpine}) reduce the attack surface. What should be added: a \texttt{securityContext} block on every container with \texttt{runAsNonRoot: true}, \texttt{readOnlyRootFilesystem: true}, and \texttt{allowPrivilegeEscalation: false}.
+
+\textbf{Threat 5: Unrestricted lateral movement between pods.}
+By default, all pods in a Kubernetes cluster can reach all other pods. A compromised frontend pod could connect directly to \texttt{db-service:5432} if it obtained the credentials. Mitigation implemented: none currently. What should be added: Kubernetes NetworkPolicies that allow only backend pods to reach the database, and only frontend pods to reach the backend.
+
+\textbf{Threat 6: SQL injection.}
+User-supplied text from the browser is inserted into the database. Mitigation implemented: all database queries use psycopg2's parameterised query syntax (\texttt{\%s} placeholders), which separates the query structure from the data. The database driver handles escaping. No string concatenation is used for SQL anywhere in the code.
+
+\textbf{Threat 7: Stored Cross-Site Scripting (XSS).}
+Notes are created by users and rendered back into HTML. If the text contained \texttt{<script>} tags and was inserted directly into the DOM, it would execute. Mitigation implemented: the frontend's \texttt{escHtml()} function runs on every note before it is inserted into the DOM, replacing all angle brackets, quotes, and ampersands with their HTML entity equivalents.
+
+\textbf{Threat 8: Unverified image provenance.}
+The custom Docker images are hosted on a public Docker Hub repository. There is nothing stopping someone from pushing a malicious image with the same name if they compromised the account. Mitigation implemented: images are tagged with specific version tags (\texttt{v2}) rather than \texttt{latest}, so a surprise push would not immediately affect running pods. What should be added: image signing with Sigstore/cosign, vulnerability scanning with Trivy in CI before pushing, and an admission webhook that rejects unsigned images.
+
+\subsection{Scaling Discussion}
+
+\textbf{Frontend.} nginx is completely stateless --- it serves files and proxies requests. Adding more replicas requires one command and zero code changes. The practical limit is cluster node capacity.
+
+\textbf{Backend.} The Flask service is also stateless at the application level. Scaling works today. The real constraint is the database: more backend replicas means more connections to PostgreSQL. Before scaling the backend beyond roughly five or ten replicas in production, connection pooling would have to be in place.
+
+\textbf{Database.} PostgreSQL in its current single-replica form does not scale horizontally. For a read-heavy workload, streaming replication to one or more read replicas would help. For a write-heavy workload, the only options are vertical scaling (a bigger instance) or a fundamentally different database that supports distributed writes. For this assignment's load profile, a single instance is more than sufficient.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Repository}
+% ─────────────────────────────────────────────────────────────────────────────
+
+The full source code, Dockerfiles, and Kubernetes manifests are available at:
+
+\begin{center}
+\url{https://github.com/JoVn-X-79/noteboard}
+\end{center}
+
+The repository is structured as follows:
+
+\begin{itemize}
+    \item \texttt{backend/} --- Flask application source code and Dockerfile
+    \item \texttt{frontend/} --- static HTML/JS page, nginx configuration, and Dockerfile
+    \item \texttt{k8s/} --- all Kubernetes YAML manifests (ConfigMap, Secret, PVC, Deployments, Services)
+    \item \texttt{docs/} --- the three documentation files this report is based on
+    \item \texttt{README.md} --- deployment instructions, access instructions, and scaling commands
+\end{itemize}
+
+Docker Hub images (public):
+\begin{itemize}
+    \item \texttt{docker.io/jovnx79/noteboard-frontend:v2}
+    \item \texttt{docker.io/jovnx79/noteboard-backend:v2}
+\end{itemize}
+
+The entire application can be deployed to a running Kubernetes cluster with three commands:
+
+\begin{verbatim}
+git clone https://github.com/JoVn-X-79/noteboard.git
+cd noteboard
+kubectl apply -f k8s/
+\end{verbatim}
+
+\end{document}
