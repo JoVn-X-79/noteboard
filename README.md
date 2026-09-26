@@ -32,8 +32,8 @@ Two independently scalable microservices + one database with persistent storage.
 
 | Service | Image |
 |---|---|
-| Frontend | `jovnx79/noteboard-frontend:v1` |
-| Backend | `jovnx79/noteboard-backend:v1` |
+| Frontend | `jovnx79/noteboard-frontend:v2` |
+| Backend | `jovnx79/noteboard-backend:v2` |
 
 ---
 
