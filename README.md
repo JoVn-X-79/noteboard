@@ -62,6 +62,8 @@ minikube service frontend-service --url
 
 Keep that terminal open (it maintains the tunnel), then open the printed URL in your browser.
 
+> **Note:** The port in the URL (e.g. `http://127.0.0.1:45295`) changes every time you run this command — this is expected behaviour when using minikube with the Docker driver on Linux. The NodePort 30080 is fixed inside the cluster; minikube creates a local tunnel with a random ephemeral port to forward traffic to it.
+
 ---
 
 ## REST API

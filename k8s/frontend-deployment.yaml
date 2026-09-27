@@ -48,7 +48,9 @@ spec:
 ---
 # NodePort Service — exposes the frontend to the outside world
 # Access via: minikube service frontend-service --url
-# NodePort 30080 is fixed so the URL is predictable
+# NodePort 30080 is fixed inside the cluster.
+# On minikube with the Docker driver on Linux, a tunnel is used and the
+# local port will vary each run — this is expected minikube behaviour.
 apiVersion: v1
 kind: Service
 metadata:
